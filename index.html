@@ -35,6 +35,14 @@
         @media (max-width: 768px) {
             .sticky-col { position: static; border-right: none; }
         }
+
+        .delete-btn {
+            transition: all 0.2s ease;
+            opacity: 0;
+        }
+        tr:hover .delete-btn {
+            opacity: 1;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -43,7 +51,7 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-3xl font-black text-blue-900">KPS Barasat</h1>
+                <h1 class="text-3xl font-black text-blue-900 italic">KPS Barasat</h1>
                 <p class="text-slate-500 font-bold text-xs uppercase tracking-widest">Class XI-D • Student Records</p>
             </div>
             <div class="flex gap-3">
@@ -114,7 +122,7 @@
             
             thead.innerHTML = `
                 <tr class="border-b border-slate-200">
-                    <th rowspan="2" class="p-4 border-r border-slate-200 text-center w-12 font-black bg-slate-50">#</th>
+                    <th rowspan="2" class="p-4 border-r border-slate-200 text-center w-16 font-black bg-slate-50">#</th>
                     <th rowspan="2" class="p-4 border-r border-slate-200 min-w-[200px] font-black sticky-col">STUDENT NAME</th>
                     ${subHeaders}
                     <th rowspan="2" class="p-4 font-black text-center bg-blue-100 text-blue-900">B5</th>
@@ -204,7 +212,10 @@
 
                 return `
                     <tr class="${rowClass}">
-                        <td class="p-2 border-r bg-slate-50 text-center font-bold text-slate-400">${i}</td>
+                        <td class="p-2 border-r bg-slate-50 text-center relative">
+                            <span class="font-bold text-slate-400">${i}</span>
+                            <button onclick="confirmDelete(${i}, this)" class="delete-btn absolute inset-0 bg-red-50 text-red-500 font-bold text-[8px] flex items-center justify-center hover:bg-red-500 hover:text-white">🗑️</button>
+                        </td>
                         <td class="p-0 border-r sticky-col group-hover:bg-amber-50">
                             <input onchange="update(${i}, 'name', '', this.value)" class="w-full p-3 font-bold uppercase bg-transparent outline-none focus:bg-blue-50" value="${student.name || ''}" placeholder="...">
                         </td>
@@ -277,6 +288,34 @@
             try {
                 await fetch(SHEET_API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(examsData)});
             } catch(e) {}
+        }
+
+        function confirmDelete(roll, btn) {
+            if (btn.innerText === "🗑️") {
+                btn.innerText = "SURE?";
+                btn.classList.add('bg-red-600', 'text-white');
+                // Reset after 3 seconds if not clicked
+                setTimeout(() => {
+                    if(btn.innerText === "SURE?") {
+                        btn.innerText = "🗑️";
+                        btn.classList.remove('bg-red-600', 'text-white');
+                    }
+                }, 3000);
+            } else {
+                deleteRecord(roll);
+            }
+        }
+
+        async function deleteRecord(roll) {
+            if (examsData[currentExam] && examsData[currentExam][roll]) {
+                delete examsData[currentExam][roll];
+                localStorage.setItem('kps_data', JSON.stringify(examsData));
+                renderTable();
+                
+                try {
+                    await fetch(SHEET_API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(examsData)});
+                } catch(e) {}
+            }
         }
 
         function quickUpdate() {
@@ -407,7 +446,6 @@
         text-transform: uppercase; letter-spacing: 1px;
     }
 
-    /* Single column list for students */
     .list-container {
         display: block;
     }
