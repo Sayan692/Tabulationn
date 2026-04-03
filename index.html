@@ -43,6 +43,18 @@
         tr:hover .delete-btn {
             opacity: 1;
         }
+
+        /* Modal Styles */
+        #subjectModal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.5);
+            z-index: 100;
+            backdrop-filter: blur(4px);
+            align-items: center;
+            justify-content: center;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -54,8 +66,11 @@
                 <h1 class="text-3xl font-black text-blue-900 italic">KPS Barasat</h1>
                 <p class="text-slate-500 font-bold text-xs uppercase tracking-widest">Class XI-D • Student Records</p>
             </div>
-            <div class="flex gap-3">
-                <div id="syncStatus" class="px-4 py-2 rounded-full bg-slate-100 text-[10px] font-black border border-slate-200 uppercase tracking-tighter">Initializing...</div>
+            <div class="flex flex-wrap justify-center gap-3">
+                <div id="syncStatus" class="px-4 py-2 rounded-full bg-slate-100 text-[10px] font-black border border-slate-200 uppercase tracking-tighter flex items-center">Initializing...</div>
+                <button onclick="toggleSubjectModal(true)" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-3 rounded-xl font-black text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2">
+                    <span>⚙️</span> SUBJECTS
+                </button>
                 <button onclick="generateReportCards()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-black text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2">
                     <span>🖨️</span> PRINT TABULATION
                 </button>
@@ -67,7 +82,7 @@
             <h3 class="text-[10px] font-black uppercase tracking-[0.2em] mb-4 opacity-60">Quick Marks Entry</h3>
             <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div>
-                    <label class="block text-[10px] font-bold opacity-70 mb-1">SL NO</label>
+                    <label class="block text-[10px] font-bold opacity-70 mb-1">ROLL NO</label>
                     <input type="number" id="qe-roll" class="qe-input w-full rounded-xl p-3 outline-none focus:ring-2 ring-blue-400">
                 </div>
                 <div>
@@ -91,10 +106,35 @@
         <!-- Master Table -->
         <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="overflow-x-auto table-container">
-                <table class="w-full text-left text-[11px] min-w-[1600px]">
+                <table class="w-full text-left text-[11px] min-w-[1800px]">
                     <thead id="thead" class="bg-slate-50"></thead>
                     <tbody id="tbody"></tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subject Manager Modal -->
+    <div id="subjectModal">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md border border-slate-200">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-black text-slate-800">Manage Subjects</h2>
+                <button onclick="toggleSubjectModal(false)" class="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            
+            <div class="mb-6">
+                <div class="flex gap-2">
+                    <input type="text" id="newSubjectInput" placeholder="New Subject Name..." class="flex-1 bg-slate-100 border border-slate-200 rounded-xl px-4 py-2 outline-none focus:ring-2 ring-blue-500 font-bold">
+                    <button onclick="addSubject()" class="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-sm hover:bg-blue-700 transition-colors">ADD</button>
+                </div>
+            </div>
+
+            <div id="subjectList" class="space-y-2 max-h-64 overflow-y-auto pr-2">
+                <!-- Subject items will be rendered here -->
+            </div>
+
+            <div class="mt-8 flex gap-3">
+                <button onclick="toggleSubjectModal(false)" class="flex-1 bg-slate-100 text-slate-600 font-black py-3 rounded-xl hover:bg-slate-200 transition-colors">CLOSE</button>
             </div>
         </div>
     </div>
@@ -104,15 +144,72 @@
 
     <script>
         const SHEET_API = "https://script.google.com/macros/s/AKfycbx_Oqdkta2P-WIxM8_Ro6yrtRtJs-mTwZ9bFvabQjqoF7TNy1qpbtPlq_Pz2wj5dUXI/exec";
-        const SUBJECTS = ['English', 'Physics', 'Chemistry', 'Mathematics', 'Biology', 'Comp Sci', 'AI', 'Data Science', 'PE', 'Comm Art', 'Economics', 'Accounts', 'B.St'];
+        
+        // Initial default list
+        let SUBJECTS = ['English', 'Physics', 'Chemistry', 'Mathematics', 'Biology', 'Comp Sci', 'AI', 'Data Science', 'PE', 'Comm Art', 'Home Science', 'Food and Nutrition', 'Psychology', 'Hindi', 'Bengali'];
         
         let examsData = {};
         let currentExam = 'ut1';
 
         async function init() {
+            await fetchData(); // Fetch data first to get synced subjects if any
+            updateSubjectUI();
+        }
+
+        function updateSubjectUI() {
+            // Update Quick Entry Dropdown
             document.getElementById('qe-subject').innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join('');
+            
+            // Update Modal List
+            const list = document.getElementById('subjectList');
+            list.innerHTML = SUBJECTS.map(s => `
+                <div class="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <span class="font-bold text-slate-700 text-sm uppercase">${s}</span>
+                    <button onclick="removeSubject('${s}')" class="text-red-400 hover:text-red-600 p-1 font-black">✕</button>
+                </div>
+            `).join('');
+
             renderHeader();
-            await fetchData();
+            renderTable();
+        }
+
+        function toggleSubjectModal(show) {
+            document.getElementById('subjectModal').style.display = show ? 'flex' : 'none';
+            if(show) document.getElementById('newSubjectInput').focus();
+        }
+
+        function addSubject() {
+            const input = document.getElementById('newSubjectInput');
+            const name = input.value.trim();
+            if(!name) return;
+            
+            // Format name (Sentence case or Title case for consistency)
+            const formatted = name.charAt(0).toUpperCase() + name.slice(1);
+            
+            if(SUBJECTS.includes(formatted)) {
+                input.value = '';
+                return;
+            }
+
+            SUBJECTS.push(formatted);
+            input.value = '';
+            
+            saveConfig();
+            updateSubjectUI();
+        }
+
+        function removeSubject(name) {
+            if(!confirm(`Remove "${name}"? This won't delete recorded marks, but it will hide the column.`)) return;
+            SUBJECTS = SUBJECTS.filter(s => s !== name);
+            saveConfig();
+            updateSubjectUI();
+        }
+
+        function saveConfig() {
+            if(!examsData.config) examsData.config = {};
+            examsData.config.subjects = SUBJECTS;
+            localStorage.setItem('kps_data', JSON.stringify(examsData));
+            syncData();
         }
 
         function renderHeader() {
@@ -138,13 +235,31 @@
                 const res = await fetch(SHEET_API);
                 const data = await res.json();
                 examsData = data || {};
+                
+                // Load Subjects from config if present
+                if(examsData.config && examsData.config.subjects) {
+                    SUBJECTS = examsData.config.subjects;
+                }
+
                 setStatus('SYNCED', 'bg-green-100 text-green-700');
                 renderTable();
             } catch (e) {
                 setStatus('OFFLINE', 'bg-red-100 text-red-700');
                 const local = localStorage.getItem('kps_data');
-                if(local) { examsData = JSON.parse(local); renderTable(); }
+                if(local) { 
+                    examsData = JSON.parse(local); 
+                    if(examsData.config && examsData.config.subjects) {
+                        SUBJECTS = examsData.config.subjects;
+                    }
+                    renderTable(); 
+                }
             }
+        }
+
+        async function syncData() {
+            try {
+                await fetch(SHEET_API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(examsData)});
+            } catch(e) {}
         }
 
         function getRankings() {
@@ -284,17 +399,13 @@
 
             localStorage.setItem('kps_data', JSON.stringify(examsData));
             renderTable();
-
-            try {
-                await fetch(SHEET_API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(examsData)});
-            } catch(e) {}
+            syncData();
         }
 
         function confirmDelete(roll, btn) {
             if (btn.innerText === "🗑️") {
                 btn.innerText = "SURE?";
                 btn.classList.add('bg-red-600', 'text-white');
-                // Reset after 3 seconds if not clicked
                 setTimeout(() => {
                     if(btn.innerText === "SURE?") {
                         btn.innerText = "🗑️";
@@ -311,10 +422,7 @@
                 delete examsData[currentExam][roll];
                 localStorage.setItem('kps_data', JSON.stringify(examsData));
                 renderTable();
-                
-                try {
-                    await fetch(SHEET_API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(examsData)});
-                } catch(e) {}
+                syncData();
             }
         }
 
