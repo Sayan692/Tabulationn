@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPS Barasat - Student Tabulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #f8fafc; color: #1e293b; font-family: 'Inter', sans-serif; }
+        
+        /* Sticky Column Logic */
+        .sticky-col { 
+            position: sticky; 
+            left: 0; 
+            background: white; 
+            z-index: 20; 
+            border-right: 2px solid #e2e8f0; 
+        }
+
+        .qe-input {
+            color: #ffffff !important;
+            background-color: #1e40af !important;
+            border: 1px solid #3b82f6;
+            font-weight: 600;
+        }
+
+        /* Master Table Scroll Shadow */
+        .table-container::-webkit-scrollbar { height: 8px; }
+        .table-container::-webkit-scrollbar-track { background: #f1f5f9; }
+        .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        #printFrame { position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; border: none; }
+
+        @media (max-width: 768px) {
+            .sticky-col { position: static; border-right: none; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-200 gap-4">
+            <div>
+                <h1 class="text-3xl font-black text-blue-900 italic">KPS Barasat</h1>
+                <p class="text-slate-500 font-bold text-xs uppercase tracking-widest">Class XI-D • Student Records</p>
+            </div>
+            <div class="flex gap-3">
+                <div id="syncStatus" class="px-4 py-2 rounded-full bg-slate-100 text-[10px] font-black border border-slate-200 uppercase tracking-tighter">Initializing...</div>
+                <button onclick="generateReportCards()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-black text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2">
+                    <span>🖨️</span> PRINT TABULATION
+                </button>
+            </div>
+        </header>
+
+        <!-- Quick Entry -->
+        <div class="bg-blue-900 rounded-3xl p-6 mb-8 shadow-xl text-white">
+            <h3 class="text-[10px] font-black uppercase tracking-[0.2em] mb-4 opacity-60">Quick Marks Entry</h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div>
+                    <label class="block text-[10px] font-bold opacity-70 mb-1">ROLL NO</label>
+                    <input type="number" id="qe-roll" class="qe-input w-full rounded-xl p-3 outline-none focus:ring-2 ring-blue-400">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold opacity-70 mb-1">SUBJECT</label>
+                    <select id="qe-subject" class="qe-input w-full rounded-xl p-3 outline-none focus:ring-2 ring-blue-400"></select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold opacity-70 mb-1">THEORY</label>
+                    <input type="text" id="qe-theory" placeholder="e.g. 65 or AB" class="qe-input w-full rounded-xl p-3 outline-none focus:ring-2 ring-blue-400">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold opacity-70 mb-1">PRACTICAL</label>
+                    <input type="text" id="qe-practical" placeholder="e.g. 28" class="qe-input w-full rounded-xl p-3 outline-none focus:ring-2 ring-blue-400">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="quickUpdate()" class="w-full bg-green-500 hover:bg-green-600 text-white font-black py-3 rounded-xl transition-all shadow-lg">SAVE DATA</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Master Table -->
+        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="overflow-x-auto table-container">
+                <table class="w-full text-left text-[11px] min-w-[1600px]">
+                    <thead id="thead" class="bg-slate-50"></thead>
+                    <tbody id="tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Printing Iframe -->
+    <iframe id="printFrame"></iframe>
+
+    <script>
+        const SHEET_API = "https://script.google.com/macros/s/AKfycbx_Oqdkta2P-WIxM8_Ro6yrtRtJs-mTwZ9bFvabQjqoF7TNy1qpbtPlq_Pz2wj5dUXI/exec";
+        const SUBJECTS = ['English', 'Physics', 'Chemistry', 'Mathematics', 'Biology', 'Comp Sci', 'AI', 'Data Science', 'PE', 'Comm Art', 'Economics', 'Accounts', 'B.St'];
+        
+        let examsData = {};
+        let currentExam = 'ut1';
+
+        async function init() {
+            document.getElementById('qe-subject').innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join('');
+            renderHeader();
+            await fetchData();
+        }
+
+        function renderHeader() {
+            const thead = document.getElementById('thead');
+            let subHeaders = SUBJECTS.map(s => `<th colspan="3" class="p-2 text-center border-r border-slate-200 bg-slate-100/50 font-black text-[9px]">${s.toUpperCase()}</th>`).join('');
+            let typeHeaders = SUBJECTS.map(() => `<th class="p-1 text-center border-r text-[8px] text-slate-400">TH</th><th class="p-1 text-center border-r text-[8px] text-slate-400">PR</th><th class="p-1 text-center border-r font-black bg-blue-50/50">TOT</th>`).join('');
+            
+            thead.innerHTML = `
+                <tr class="border-b border-slate-200">
+                    <th rowspan="2" class="p-4 border-r border-slate-200 text-center w-12 font-black bg-slate-50">#</th>
+                    <th rowspan="2" class="p-4 border-r border-slate-200 min-w-[200px] font-black sticky-col">STUDENT NAME</th>
+                    ${subHeaders}
+                    <th rowspan="2" class="p-4 font-black text-center bg-blue-100 text-blue-900">B5</th>
+                    <th rowspan="2" class="p-4 font-black text-center bg-slate-900 text-white">%</th>
+                </tr>
+                <tr class="border-b border-slate-200">${typeHeaders}</tr>
+            `;
+        }
+
+        async function fetchData() {
+            setStatus('SYNCING...', 'bg-amber-100 text-amber-700');
+            try {
+                const res = await fetch(SHEET_API);
+                const data = await res.json();
+                examsData = data || {};
+                setStatus('SYNCED', 'bg-green-100 text-green-700');
+                renderTable();
+            } catch (e) {
+                setStatus('OFFLINE', 'bg-red-100 text-red-700');
+                const local = localStorage.getItem('kps_data');
+                if(local) { examsData = JSON.parse(local); renderTable(); }
+            }
+        }
+
+        function getRankings() {
+            let rankings = [];
+            for(let i=1; i<=60; i++) {
+                const student = (examsData[currentExam] && examsData[currentExam][i]) || { name: "" };
+                const hasAnyMarks = SUBJECTS.some(sub => { const m = student[sub]; return m && (m.theory !== '' || m.practical !== ''); });
+                if(!student.name && !hasAnyMarks) continue;
+
+                let studentTotals = [];
+                SUBJECTS.forEach(sub => {
+                    const m = student[sub] || { theory: '', practical: '' };
+                    const th = m.theory === 'AB' ? 0 : parseFloat(m.theory) || 0;
+                    const pr = m.practical === 'AB' ? 0 : parseFloat(m.practical) || 0;
+                    studentTotals.push(th + pr);
+                });
+
+                const b5 = [...studentTotals].sort((a,b) => b-a).slice(0, 5).reduce((a,b) => a+b, 0);
+                const pct = b5 > 0 ? (b5 / 500 * 100).toFixed(1) : '0.0';
+                rankings.push({ roll: i, name: student.name, b5, totals: studentTotals, pct });
+            }
+            return rankings.sort((a,b) => b.b5 - a.b5);
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('tbody');
+            let rankings = getRankings();
+            const top10Rolls = new Set(rankings.slice(0, 10).map(r => r.roll));
+
+            let highestTotals = SUBJECTS.map((sub) => {
+                let max = 0;
+                for(let i=1; i<=60; i++) {
+                    const student = examsData[currentExam] && examsData[currentExam][i];
+                    if(!student) continue;
+                    const m = student[sub] || {};
+                    const th = m.theory === 'AB' ? 0 : parseFloat(m.theory) || 0;
+                    const pr = m.practical === 'AB' ? 0 : parseFloat(m.practical) || 0;
+                    if(th + pr > max) max = th + pr;
+                }
+                return max;
+            });
+
+            function buildRow(i) {
+                const student = (examsData[currentExam] && examsData[currentExam][i]) || { name: "" };
+                const rankData = rankings.find(r => r.roll === i);
+                const isTop10 = top10Rolls.has(i);
+                const b5 = rankData ? rankData.b5 : 0;
+                const pct = rankData ? rankData.pct : '-';
+
+                const rowClass = isTop10
+                    ? 'border-b border-amber-200 bg-amber-50/40 hover:bg-amber-100 group'
+                    : 'border-b border-slate-100 hover:bg-slate-50 group';
+
+                let subCells = '';
+                SUBJECTS.forEach((sub, idx) => {
+                    const m = student[sub] || { theory: '', practical: '' };
+                    const tot = rankData ? rankData.totals[idx] : 0;
+                    const isHigh = tot > 0 && tot === highestTotals[idx];
+                    subCells += `
+                        <td class="p-0 border-r border-slate-100"><input onchange="update(${i}, '${sub}', 'theory', this.value)" class="w-full p-2 text-center bg-transparent outline-none focus:bg-blue-50" value="${m.theory || ''}"></td>
+                        <td class="p-0 border-r border-slate-100"><input onchange="update(${i}, '${sub}', 'practical', this.value)" class="w-full p-2 text-center bg-transparent outline-none focus:bg-blue-50" value="${m.practical || ''}"></td>
+                        <td class="p-1 border-r border-slate-200 text-center font-bold ${isHigh ? 'bg-green-100 text-green-800' : 'bg-slate-50 text-slate-600'}">${tot || '-'}</td>
+                    `;
+                });
+
+                return `
+                    <tr class="${rowClass}">
+                        <td class="p-2 border-r bg-slate-50 text-center font-bold text-slate-400">${i}</td>
+                        <td class="p-0 border-r sticky-col group-hover:bg-amber-50">
+                            <input onchange="update(${i}, 'name', '', this.value)" class="w-full p-3 font-bold uppercase bg-transparent outline-none focus:bg-blue-50" value="${student.name || ''}" placeholder="...">
+                        </td>
+                        ${subCells}
+                        <td class="p-2 text-center font-black bg-blue-50 text-blue-800">${b5}</td>
+                        <td class="p-2 text-center font-black bg-slate-900 text-white text-xs">${pct}%</td>
+                    </tr>
+                `;
+            }
+
+            function sectionHeader(label, colorClass) {
+                return `<tr class="${colorClass}">
+                    <td colspan="100%" class="p-2 px-4 font-black text-[11px] uppercase tracking-widest">${label}</td>
+                </tr>`;
+            }
+
+            let top10Rows = '';
+            rankings.slice(0, 10).forEach(r => { top10Rows += buildRow(r.roll); });
+
+            let restRows = '';
+            for(let i = 1; i <= 60; i++) {
+                const student = examsData[currentExam] && examsData[currentExam][i];
+                const hasData = student && (student.name || SUBJECTS.some(sub => { const m = student[sub]; return m && (m.theory !== '' || m.practical !== ''); }));
+                if(!hasData) continue;
+                restRows += buildRow(i);
+            }
+
+            let highCells = '';
+            SUBJECTS.forEach((sub, idx) => {
+                const h = highestTotals[idx];
+                highCells += `
+                    <td class="p-1 border-r border-slate-200 text-center text-[9px] text-slate-400">-</td>
+                    <td class="p-1 border-r border-slate-200 text-center text-[9px] text-slate-400">-</td>
+                    <td class="p-1 border-r border-slate-200 text-center font-black text-green-700 bg-green-50">${h || '-'}</td>
+                `;
+            });
+            const highRow = `
+                <tr class="border-t-2 border-green-300 bg-green-50/60">
+                    <td class="p-2 border-r bg-green-100 text-center font-black text-green-800 text-[9px]">★</td>
+                    <td class="p-3 border-r sticky-col bg-green-100 font-black text-green-800 text-[10px] uppercase tracking-wide">Highest Marks</td>
+                    ${highCells}
+                    <td class="p-2 text-center bg-green-100 text-green-800 font-black">-</td>
+                    <td class="p-2 text-center bg-green-100 text-green-800 font-black">-</td>
+                </tr>
+            `;
+
+            tbody.innerHTML =
+                sectionHeader('🏆 Top 10 Students', 'bg-amber-400 text-amber-950') +
+                top10Rows +
+                sectionHeader('📋 All Students', 'bg-slate-700 text-white') +
+                restRows +
+                highRow;
+        }
+
+        async function update(roll, sub, field, val) {
+            if(!examsData[currentExam]) examsData[currentExam] = {};
+            if(!examsData[currentExam][roll]) examsData[currentExam][roll] = { name: "" };
+
+            if(sub === 'name') {
+                examsData[currentExam][roll].name = val.toUpperCase();
+            } else {
+                if(!examsData[currentExam][roll][sub]) examsData[currentExam][roll][sub] = { theory: '', practical: '' };
+                if(val === '') delete examsData[currentExam][roll][sub][field];
+                else examsData[currentExam][roll][sub][field] = val;
+            }
+
+            localStorage.setItem('kps_data', JSON.stringify(examsData));
+            renderTable();
+
+            try {
+                await fetch(SHEET_API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(examsData)});
+            } catch(e) {}
+        }
+
+        function quickUpdate() {
+            const roll = document.getElementById('qe-roll').value;
+            const sub = document.getElementById('qe-subject').value;
+            const th = document.getElementById('qe-theory').value;
+            const pr = document.getElementById('qe-practical').value;
+            if(!roll) return;
+            if(th) update(roll, sub, 'theory', th);
+            if(pr) update(roll, sub, 'practical', pr);
+            document.getElementById('qe-theory').value = '';
+            document.getElementById('qe-practical').value = '';
+            document.getElementById('qe-roll').focus();
+        }
+
+        function generateReportCards() {
+            const rankings = getRankings();
+            
+            const allStudents = [];
+            for(let i = 1; i <= 60; i++) {
+                const student = examsData[currentExam] && examsData[currentExam][i];
+                if(!student) continue;
+                const hasData = student.name || SUBJECTS.some(sub => { 
+                    const m = student[sub]; 
+                    return m && (m.theory !== '' || m.practical !== ''); 
+                });
+                if(!hasData) continue;
+                const rData = rankings.find(r => r.roll === i);
+                allStudents.push({ roll: i, student, rData });
+            }
+
+            if(allStudents.length === 0) {
+                alert('No student data found to print!');
+                return;
+            }
+
+            function buildStudentResultStrip(item, isTop = false) {
+                const { roll, student, rData } = item;
+                const studentSubjects = SUBJECTS.filter(sub => {
+                    const m = student[sub];
+                    return m && (m.theory !== '' || m.practical !== '');
+                });
+
+                if(studentSubjects.length === 0) return '';
+
+                let subHeaders = studentSubjects.map(sub => `
+                    <th colspan="3" class="sub-name-cell">${sub.toUpperCase()}</th>
+                `).join('');
+
+                let thPrHeaders = studentSubjects.map(() => `
+                    <th class="sub-type-cell">TH</th>
+                    <th class="sub-type-cell">PR</th>
+                    <th class="sub-type-cell tot-cell-head">TOT</th>
+                `).join('');
+
+                let marksCells = studentSubjects.map(sub => {
+                    const m = student[sub] || {};
+                    const subIdx = SUBJECTS.indexOf(sub);
+                    const tot = rData ? rData.totals[subIdx] : '-';
+                    return `
+                        <td class="mark-val">${m.theory || '-'}</td>
+                        <td class="mark-val">${m.practical || '-'}</td>
+                        <td class="mark-tot">${tot}</td>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="result-card ${isTop ? 'top-card' : ''}">
+                        <div class="card-header">
+                            <div class="header-left">
+                                <span class="label">STUDENT IDENTITY</span>
+                                <div class="name">${student.name || 'STUDENT NAME NOT SET'}</div>
+                            </div>
+                            <div class="header-right">
+                                <span class="label">ROLL / EXAMINATION</span>
+                                <div class="roll-exam">#${roll} - ${currentExam.toUpperCase()}</div>
+                            </div>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="result-table">
+                                <thead>
+                                    <tr>
+                                        ${subHeaders}
+                                        <th class="final-head b5-head">B5</th>
+                                        <th class="final-head pct-head">%</th>
+                                    </tr>
+                                    <tr>
+                                        ${thPrHeaders}
+                                        <th class="empty-cell"></th>
+                                        <th class="empty-cell"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        ${marksCells}
+                                        <td class="final-val b5-val">${rData ? rData.b5 : '-'}</td>
+                                        <td class="final-val pct-val">${rData ? rData.pct : '-'}%</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const top10Html = rankings.slice(0, 10).map(r => {
+                const student = examsData[currentExam] && examsData[currentExam][r.roll];
+                return buildStudentResultStrip({ roll: r.roll, student, rData: r }, true);
+            }).join('');
+
+            const allHtml = allStudents.map(item => buildStudentResultStrip(item)).join('');
+
+            const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; margin: 0; padding: 10px; color: #1e293b; background: #fff; font-size: 12px; }
+    
+    header { text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px; }
+    h1 { margin: 0; font-size: 22px; color: #1e3a8a; letter-spacing: 1px; }
+    .subtitle { font-weight: bold; font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+
+    .section-header { 
+        background: #1e293b; color: #fff; padding: 4px 12px; 
+        font-size: 11px; font-weight: 900; border-radius: 4px; margin: 15px 0 8px; 
+        text-transform: uppercase; letter-spacing: 1px;
+    }
+
+    /* Single column list for students */
+    .list-container {
+        display: block;
+    }
+
+    .result-card {
+        border: 1px solid #000; border-radius: 0;
+        padding: 0; margin-bottom: 10px; page-break-inside: avoid;
+        background: #fff; border: 1.5px solid #cbd5e1;
+        width: 100%;
+    }
+    .top-card { border-color: #f59e0b; border-width: 2px; }
+
+    .card-header { 
+        display: flex; justify-content: space-between; align-items: flex-end;
+        padding: 6px 10px; border-bottom: 1.5px solid #cbd5e1; 
+    }
+    .label { font-size: 9px; font-weight: 800; color: #64748b; display: block; margin-bottom: 1px; }
+    .name { font-size: 14px; font-weight: 900; color: #1e40af; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .roll-exam { font-size: 11px; font-weight: 900; text-align: right; }
+    .header-right { text-align: right; }
+
+    .table-wrapper { padding: 4px; }
+    .result-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .result-table th, .result-table td { border: 1px solid #000; padding: 2px 1px; text-align: center; }
+
+    .sub-name-cell { background: #f8fafc; font-size: 10px; font-weight: 900; }
+    .sub-type-cell { background: #fff; font-size: 9px; font-weight: 700; color: #475569; }
+    .tot-cell-head { background: #f1f5f9; }
+
+    .mark-val { font-size: 12px; }
+    .mark-tot { font-size: 12px; font-weight: 900; background: #fff; }
+
+    .final-head { font-size: 11px; font-weight: 900; }
+    .b5-head { background: #dbeafe; color: #1e40af; }
+    .pct-head { background: #dcfce7; color: #15803d; }
+    .empty-cell { background: #f8fafc; }
+
+    .final-val { font-size: 13px; font-weight: 900; }
+    .b5-val { background: #eff6ff; }
+    .pct-val { background: #f0fdf4; }
+
+    .page-break { page-break-before: always; }
+
+    @media print {
+        body { padding: 0; }
+        @page { size: portrait; margin: 8mm; }
+    }
+</style>
+</head>
+<body>
+    <header>
+        <h1>KPS BARASAT</h1>
+        <div class="subtitle">Official Student Performance Record • ${currentExam.toUpperCase()}</div>
+    </header>
+
+    <div class="section-header" style="background: #92400e;">🏆 Merit Holders (Top 10)</div>
+    <div class="list-container">
+        ${top10Html}
+    </div>
+
+    <div class="page-break"></div>
+    <div class="section-header">📋 Consolidated Tabulation</div>
+    <div class="list-container">
+        ${allHtml}
+    </div>
+
+    <script>window.onload = function(){ window.print(); };<\/script>
+</body>
+</html>`;
+
+            const printWin = window.open('', '_blank');
+            if(!printWin) { alert('Pop-up blocked! Please allow pop-ups to print.'); return; }
+            printWin.document.open();
+            printWin.document.write(html);
+            printWin.document.close();
+        }
+
+        function setStatus(txt, cls) {
+            const el = document.getElementById('syncStatus');
+            el.innerText = txt;
+            el.className = `px-4 py-2 rounded-full text-[10px] font-black border ${cls} uppercase tracking-tighter`;
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
