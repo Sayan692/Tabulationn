@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KPS Barasat - Student Tabulation</title>
+    <title>KPS Barasat - Teacher Portal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
     <style>
@@ -44,6 +44,21 @@
             opacity: 1;
         }
 
+        /* Drag and Drop Styles */
+        .drag-handle {
+            cursor: grab;
+            color: #cbd5e1;
+            transition: color 0.2s;
+        }
+        .drag-handle:hover { color: #64748b; }
+        .dragging {
+            opacity: 0.5;
+            background-color: #eff6ff !important;
+        }
+        .drop-target {
+            border-top: 4px solid #3b82f6 !important;
+        }
+
         /* Modal Styles */
         #subjectModal {
             display: none;
@@ -56,7 +71,6 @@
             justify-content: center;
         }
 
-        /* Select Styling */
         .exam-select {
             appearance: none;
             background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
@@ -65,21 +79,60 @@
             background-size: 1.5em 1.5em;
             padding-right: 2.5rem;
         }
+
+        #loginScreen {
+            display: flex;
+            position: fixed;
+            inset: 0;
+            background: #0f172a;
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
 
-    <div class="max-w-7xl mx-auto">
+    <!-- Login Screen -->
+    <div id="loginScreen">
+        <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md border border-slate-200">
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-black text-blue-900 italic mb-2">KPS Portal</h1>
+                <p class="text-slate-500 font-bold text-xs uppercase tracking-widest">Departmental Login</p>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Select Teacher</label>
+                    <select id="loginUser" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold outline-none focus:ring-2 ring-blue-500 transition-all">
+                        <option value="Sayan">Sayan (Class XI D)</option>
+                        <option value="Subhankar">Subhankar (Class XI C)</option>
+                        <option value="Ayan">Ayan (Class XIII D)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Access Key</label>
+                    <input type="password" id="loginPass" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold outline-none focus:ring-2 ring-blue-500 transition-all">
+                </div>
+                <button onclick="handleLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl transition-all shadow-lg active:scale-95 text-sm tracking-widest">
+                    ENTER TABULATION
+                </button>
+                <p id="loginError" class="text-red-500 text-[10px] font-bold text-center mt-2 hidden">INVALID ACCESS KEY</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content (Hidden until login) -->
+    <div id="appContent" class="max-w-7xl mx-auto hidden">
         <!-- Header -->
         <header class="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-200 gap-4">
             <div>
                 <h1 class="text-3xl font-black text-blue-900 italic">KPS Barasat</h1>
-                <p class="text-slate-500 font-bold text-xs uppercase tracking-widest">Class XI-D • Student Records</p>
+                <p id="classHeader" class="text-slate-500 font-bold text-xs uppercase tracking-widest">Loading...</p>
             </div>
             <div class="flex flex-wrap justify-center gap-3">
                 <div id="syncStatus" class="px-4 py-2 rounded-full bg-slate-100 text-[10px] font-black border border-slate-200 uppercase tracking-tighter flex items-center">Initializing...</div>
                 
-                <!-- Exam Toggle Dropdown -->
                 <div class="relative">
                     <select id="examToggle" onchange="changeExam(this.value)" class="exam-select bg-white border border-slate-200 px-4 py-3 rounded-xl font-black text-sm text-slate-700 outline-none focus:ring-2 ring-blue-500 transition-all shadow-sm">
                         <option value="ut1">UT 1 (Max 50)</option>
@@ -93,7 +146,10 @@
                     <span>⚙️</span> SUBJECTS
                 </button>
                 <button onclick="generateReportCards()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-black text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2">
-                    <span>🖨️</span> PRINT TABULATION
+                    <span>🖨️</span> PRINT
+                </button>
+                <button onclick="handleLogout()" class="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-3 rounded-xl font-black text-sm transition-all border border-red-100">
+                    LOGOUT
                 </button>
             </div>
         </header>
@@ -160,16 +216,55 @@
         </div>
     </div>
 
-    <!-- Hidden Printing Iframe -->
     <iframe id="printFrame"></iframe>
 
     <script>
         const SHEET_API = "https://script.google.com/macros/s/AKfycbx_Oqdkta2P-WIxM8_Ro6yrtRtJs-mTwZ9bFvabQjqoF7TNy1qpbtPlq_Pz2wj5dUXI/exec";
         
+        const TEACHERS = {
+            "Sayan": { class: "XI D", pass: "sayan123" },
+            "Subhankar": { class: "XI C", pass: "subhankar123" },
+            "Ayan": { class: "XIII D", pass: "ayan123" }
+        };
+
+        let currentTeacher = null;
+        let currentClass = null;
         let SUBJECTS = ['English', 'Physics', 'Chemistry', 'Mathematics', 'Biology', 'Comp Sci', 'AI', 'Data Science', 'PE', 'Comm Art', 'Home Science', 'Food and Nutrition', 'Psychology', 'Hindi', 'Bengali'];
         
-        let examsData = {};
+        let globalData = {}; // Stores all classes
+        let examsData = {};  // Stores current class's data slice
         let currentExam = 'ut1';
+        let draggedRoll = null;
+
+        // --- Auth Logic ---
+
+        function handleLogin() {
+            const user = document.getElementById('loginUser').value;
+            const pass = document.getElementById('loginPass').value;
+            const errorEl = document.getElementById('loginError');
+
+            if (TEACHERS[user] && TEACHERS[user].pass === pass) {
+                currentTeacher = user;
+                currentClass = TEACHERS[user].class;
+                errorEl.classList.add('hidden');
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('appContent').classList.remove('hidden');
+                document.getElementById('classHeader').innerText = `Class ${currentClass} • Teacher ${currentTeacher}`;
+                init();
+            } else {
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        function handleLogout() {
+            currentTeacher = null;
+            currentClass = null;
+            document.getElementById('loginScreen').style.display = 'flex';
+            document.getElementById('appContent').classList.add('hidden');
+            document.getElementById('loginPass').value = '';
+        }
+
+        // --- Core App Logic ---
 
         async function init() {
             await fetchData();
@@ -226,8 +321,7 @@
         function saveConfig() {
             if(!examsData.config) examsData.config = {};
             examsData.config.subjects = SUBJECTS;
-            localStorage.setItem('kps_data', JSON.stringify(examsData));
-            syncData();
+            saveAndSync();
         }
 
         function renderHeader() {
@@ -237,6 +331,7 @@
             
             thead.innerHTML = `
                 <tr class="border-b border-slate-200">
+                    <th rowspan="2" class="p-4 border-r border-slate-200 text-center w-8 bg-slate-50"></th>
                     <th rowspan="2" class="p-4 border-r border-slate-200 text-center w-16 font-black bg-slate-50">#</th>
                     <th rowspan="2" class="p-4 border-r border-slate-200 min-w-[200px] font-black sticky-col">STUDENT NAME</th>
                     ${subHeaders}
@@ -252,7 +347,12 @@
             try {
                 const res = await fetch(SHEET_API);
                 const data = await res.json();
-                examsData = data || {};
+                globalData = data || {};
+                
+                // Initialize class-specific slice
+                if (!globalData[currentClass]) globalData[currentClass] = {};
+                examsData = globalData[currentClass];
+
                 if(examsData.config && examsData.config.subjects) {
                     SUBJECTS = examsData.config.subjects;
                 }
@@ -260,9 +360,10 @@
                 renderTable();
             } catch (e) {
                 setStatus('OFFLINE', 'bg-red-100 text-red-700');
-                const local = localStorage.getItem('kps_data');
+                const local = localStorage.getItem('kps_global_data');
                 if(local) { 
-                    examsData = JSON.parse(local); 
+                    globalData = JSON.parse(local);
+                    examsData = globalData[currentClass] || {};
                     if(examsData.config && examsData.config.subjects) {
                         SUBJECTS = examsData.config.subjects;
                     }
@@ -271,9 +372,11 @@
             }
         }
 
-        async function syncData() {
+        async function saveAndSync() {
+            globalData[currentClass] = examsData;
+            localStorage.setItem('kps_global_data', JSON.stringify(globalData));
             try {
-                await fetch(SHEET_API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(examsData)});
+                await fetch(SHEET_API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(globalData)});
             } catch(e) {}
         }
 
@@ -320,7 +423,7 @@
                 return max;
             });
 
-            function buildRow(i) {
+            function buildRow(i, isDraggable = false) {
                 const student = (examsData[currentExam] && examsData[currentExam][i]) || { name: "" };
                 const rankData = rankings.find(r => r.roll === i);
                 const isTop10 = top10Rolls.has(i);
@@ -344,7 +447,14 @@
                 });
 
                 return `
-                    <tr class="${rowClass}">
+                    <tr 
+                        ${isDraggable ? `draggable="true" ondragstart="handleDragStart(event, ${i})" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, ${i})"` : ''}
+                        class="${rowClass} transition-all"
+                        data-roll="${i}"
+                    >
+                        <td class="p-2 border-r bg-slate-50 text-center">
+                            ${isDraggable ? `<span class="drag-handle text-lg">⠿</span>` : ''}
+                        </td>
                         <td class="p-2 border-r bg-slate-50 text-center relative">
                             <span class="font-bold text-slate-400">${i}</span>
                             <button onclick="confirmDelete(${i}, this)" class="delete-btn absolute inset-0 bg-red-50 text-red-500 font-bold text-[8px] flex items-center justify-center hover:bg-red-500 hover:text-white">🗑️</button>
@@ -366,14 +476,14 @@
             }
 
             let top10Rows = '';
-            rankings.slice(0, 10).forEach(r => { top10Rows += buildRow(r.roll); });
+            rankings.slice(0, 10).forEach(r => { top10Rows += buildRow(r.roll, false); });
 
             let restRows = '';
             for(let i = 1; i <= 60; i++) {
                 const student = examsData[currentExam] && examsData[currentExam][i];
                 const hasData = student && (student.name || SUBJECTS.some(sub => { const m = student[sub]; return m && (m.theory !== '' || m.practical !== ''); }));
                 if(!hasData) continue;
-                restRows += buildRow(i);
+                restRows += buildRow(i, true);
             }
 
             let highCells = '';
@@ -387,6 +497,7 @@
             });
             const highRow = `
                 <tr class="border-t-2 border-green-300 bg-green-50/60">
+                    <td class="p-2 border-r bg-green-100"></td>
                     <td class="p-2 border-r bg-green-100 text-center font-black text-green-800 text-[9px]">★</td>
                     <td class="p-3 border-r sticky-col bg-green-100 font-black text-green-800 text-[10px] uppercase tracking-wide">Highest Marks</td>
                     ${highCells}
@@ -396,11 +507,71 @@
             `;
 
             tbody.innerHTML =
-                sectionHeader('🏆 Top 10 Students', 'bg-amber-400 text-amber-950') +
+                sectionHeader('🏆 Merit Holders', 'bg-amber-400 text-amber-950') +
                 top10Rows +
-                sectionHeader('📋 All Students', 'bg-slate-700 text-white') +
+                sectionHeader(`📋 All Students (${currentClass})`, 'bg-slate-700 text-white') +
                 restRows +
                 highRow;
+        }
+
+        // --- Drag and Drop Logic ---
+
+        function handleDragStart(e, roll) {
+            draggedRoll = roll;
+            e.currentTarget.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('drop-target');
+        }
+
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('drop-target');
+        }
+
+        function handleDrop(e, targetRoll) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drop-target');
+            if (draggedRoll === targetRoll) return;
+
+            const currentRolls = [];
+            for(let i=1; i<=60; i++) {
+                const student = examsData[currentExam] && examsData[currentExam][i];
+                if(student && (student.name || SUBJECTS.some(sub => student[sub]))) {
+                    currentRolls.push(i);
+                }
+            }
+
+            const fromIdx = currentRolls.indexOf(draggedRoll);
+            const toIdx = currentRolls.indexOf(targetRoll);
+            const updatedRolls = [...currentRolls];
+            const [moved] = updatedRolls.splice(fromIdx, 1);
+            updatedRolls.splice(toIdx, 0, moved);
+
+            resequenceData(updatedRolls);
+            draggedRoll = null;
+        }
+
+        function resequenceData(newRollOrder) {
+            const oldData = JSON.parse(JSON.stringify(examsData));
+            const examTypes = ['ut1', 'half_yearly', 'ut2', 'annually'];
+            const newExamsData = { config: oldData.config };
+            
+            examTypes.forEach(exam => {
+                newExamsData[exam] = {};
+                newRollOrder.forEach((oldRoll, index) => {
+                    const newRoll = index + 1;
+                    if (oldData[exam] && oldData[exam][oldRoll]) {
+                        newExamsData[exam][newRoll] = oldData[exam][oldRoll];
+                    }
+                });
+            });
+
+            examsData = newExamsData;
+            saveAndSync();
+            renderTable();
         }
 
         async function update(roll, sub, field, val) {
@@ -415,9 +586,8 @@
                 else examsData[currentExam][roll][sub][field] = val;
             }
 
-            localStorage.setItem('kps_data', JSON.stringify(examsData));
+            saveAndSync();
             renderTable();
-            syncData();
         }
 
         function confirmDelete(roll, btn) {
@@ -436,12 +606,14 @@
         }
 
         async function deleteRecord(roll) {
-            if (examsData[currentExam] && examsData[currentExam][roll]) {
-                delete examsData[currentExam][roll];
-                localStorage.setItem('kps_data', JSON.stringify(examsData));
-                renderTable();
-                syncData();
-            }
+            const examTypes = ['ut1', 'half_yearly', 'ut2', 'annually'];
+            examTypes.forEach(type => {
+                if (examsData[type] && examsData[type][roll]) {
+                    delete examsData[type][roll];
+                }
+            });
+            saveAndSync();
+            renderTable();
         }
 
         function quickUpdate() {
@@ -459,24 +631,17 @@
 
         function generateReportCards() {
             const rankings = getRankings();
-            
             const allStudents = [];
             for(let i = 1; i <= 60; i++) {
                 const student = examsData[currentExam] && examsData[currentExam][i];
                 if(!student) continue;
-                const hasData = student.name || SUBJECTS.some(sub => { 
-                    const m = student[sub]; 
-                    return m && (m.theory !== '' || m.practical !== ''); 
-                });
+                const hasData = student.name || SUBJECTS.some(sub => student[sub]);
                 if(!hasData) continue;
                 const rData = rankings.find(r => r.roll === i);
                 allStudents.push({ roll: i, student, rData });
             }
 
-            if(allStudents.length === 0) {
-                alert('No student data found to print!');
-                return;
-            }
+            if(allStudents.length === 0) { alert('No data to print!'); return; }
 
             function buildStudentResultStrip(item, isTop = false) {
                 const { roll, student, rData } = item;
@@ -486,60 +651,28 @@
                 });
 
                 if(studentSubjects.length === 0) return '';
-
-                let subHeaders = studentSubjects.map(sub => `
-                    <th colspan="3" class="sub-name-cell">${sub.toUpperCase()}</th>
-                `).join('');
-
-                let thPrHeaders = studentSubjects.map(() => `
-                    <th class="sub-type-cell">TH</th>
-                    <th class="sub-type-cell">PR</th>
-                    <th class="sub-type-cell tot-cell-head">TOT</th>
-                `).join('');
-
+                let subHeaders = studentSubjects.map(sub => `<th colspan="3" class="sub-name-cell">${sub.toUpperCase()}</th>`).join('');
+                let thPrHeaders = studentSubjects.map(() => `<th class="sub-type-cell">TH</th><th class="sub-type-cell">PR</th><th class="sub-type-cell tot-cell-head">TOT</th>`).join('');
                 let marksCells = studentSubjects.map(sub => {
                     const m = student[sub] || {};
                     const subIdx = SUBJECTS.indexOf(sub);
-                    const tot = rData ? rData.totals[subIdx] : '-';
-                    return `
-                        <td class="mark-val">${m.theory || '-'}</td>
-                        <td class="mark-val">${m.practical || '-'}</td>
-                        <td class="mark-tot">${tot}</td>
-                    `;
+                    return `<td class="mark-val">${m.theory || '-'}</td><td class="mark-val">${m.practical || '-'}</td><td class="mark-tot">${rData ? rData.totals[subIdx] : '-'}</td>`;
                 }).join('');
-
-                const examDisplay = document.querySelector(`#examToggle option[value="${currentExam}"]`).innerText;
 
                 return `
                     <div class="result-card ${isTop ? 'top-card' : ''}">
                         <div class="card-header">
-                            <div class="header-left">
-                                <div class="name">${student.name || 'STUDENT NAME NOT SET'}</div>
-                            </div>
-                            <div class="header-right">
-                                <div class="roll-exam">#${roll} - ${examDisplay}</div>
-                            </div>
+                            <div class="name">${student.name || 'STUDENT NAME'}</div>
+                            <div class="roll-exam">#${roll} • ${currentClass} • ${currentExam.toUpperCase()}</div>
                         </div>
                         <div class="table-wrapper">
                             <table class="result-table">
                                 <thead>
-                                    <tr>
-                                        ${subHeaders}
-                                        <th class="final-head b5-head">B5</th>
-                                        <th class="final-head pct-head">%</th>
-                                    </tr>
-                                    <tr>
-                                        ${thPrHeaders}
-                                        <th class="empty-cell"></th>
-                                        <th class="empty-cell"></th>
-                                    </tr>
+                                    <tr>${subHeaders}<th class="final-head b5-head">B5</th><th class="final-head pct-head">%</th></tr>
+                                    <tr>${thPrHeaders}<th class="empty-cell"></th><th class="empty-cell"></th></tr>
                                 </thead>
                                 <tbody>
-                                    <tr>
-                                        ${marksCells}
-                                        <td class="final-val b5-val">${rData ? rData.b5 : '-'}</td>
-                                        <td class="final-val pct-val">${rData ? rData.pct : '-'}%</td>
-                                    </tr>
+                                    <tr>${marksCells}<td class="final-val b5-val">${rData ? rData.b5 : '-'}</td><td class="final-val pct-val">${rData ? rData.pct : '-'}%</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -547,65 +680,34 @@
                 `;
             }
 
-            const top10Html = rankings.slice(0, 10).map(r => {
-                const student = examsData[currentExam] && examsData[currentExam][r.roll];
-                return buildStudentResultStrip({ roll: r.roll, student, rData: r }, true);
-            }).join('');
-
+            const top10Html = rankings.slice(0, 10).map(r => buildStudentResultStrip({ roll: r.roll, student: examsData[currentExam][r.roll], rData: r }, true)).join('');
             const allHtml = allStudents.map(item => buildStudentResultStrip(item)).join('');
 
-            const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<style>
-    * { box-sizing: border-box; }
-    body { font-family: 'Inter', sans-serif; margin: 0; padding: 10px; color: #1e293b; background: #fff; font-size: 12px; }
-    header { text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px; }
-    h1 { margin: 0; font-size: 22px; color: #1e3a8a; letter-spacing: 1px; }
-    .subtitle { font-weight: bold; font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
-    .section-header { background: #1e293b; color: #fff; padding: 4px 12px; font-size: 11px; font-weight: 900; border-radius: 4px; margin: 15px 0 8px; text-transform: uppercase; letter-spacing: 1px; }
-    .result-card { border: 1px solid #000; border-radius: 0; padding: 0; margin-bottom: 10px; page-break-inside: avoid; background: #fff; border: 1.5px solid #cbd5e1; width: 100%; }
-    .top-card { border-color: #f59e0b; border-width: 2px; }
-    .card-header { display: flex; justify-content: space-between; align-items: flex-end; padding: 6px 10px; border-bottom: 1.5px solid #cbd5e1; }
-    .label { font-size: 9px; font-weight: 800; color: #64748b; display: block; margin-bottom: 1px; }
-    .name { font-size: 14px; font-weight: 900; color: #1e40af; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .roll-exam { font-size: 11px; font-weight: 900; text-align: right; }
-    .table-wrapper { padding: 4px; }
-    .result-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .result-table th, .result-table td { border: 1px solid #000; padding: 2px 1px; text-align: center; }
-    .sub-name-cell { background: #f8fafc; font-size: 10px; font-weight: 900; }
-    .sub-type-cell { background: #fff; font-size: 9px; font-weight: 700; color: #475569; }
-    .tot-cell-head { background: #f1f5f9; }
-    .mark-val { font-size: 12px; }
-    .mark-tot { font-size: 12px; font-weight: 900; background: #fff; }
-    .final-head { font-size: 11px; font-weight: 900; }
-    .b5-head { background: #dbeafe; color: #1e40af; }
-    .pct-head { background: #dcfce7; color: #15803d; }
-    .empty-cell { background: #f8fafc; }
-    .final-val { font-size: 13px; font-weight: 900; }
-    .b5-val { background: #eff6ff; }
-    .pct-val { background: #f0fdf4; }
-    .page-break { page-break-before: always; }
-    @media print { body { padding: 0; } @page { size: portrait; margin: 8mm; } }
-</style>
-</head>
-<body>
-    <header>
-        <h1>KPS BARASAT</h1>
-        <div class="subtitle">Official Student Performance Record</div>
-    </header>
-    <div class="section-header" style="background: #92400e;">🏆 Merit Holders (Top 10)</div>
-    ${top10Html}
-    <div class="page-break"></div>
-    <div class="section-header">📋 Consolidated Tabulation</div>
-    ${allHtml}
-    <script>window.onload = function(){ window.print(); };<\/script>
-</body>
-</html>`;
+            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+                body { font-family: 'Inter', sans-serif; padding: 20px; color: #1e293b; background: #fff; font-size: 11px; }
+                header { text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 20px; }
+                h1 { margin: 0; font-size: 24px; color: #1e3a8a; }
+                .section-header { background: #1e293b; color: #fff; padding: 6px 12px; font-weight: 900; border-radius: 4px; margin: 20px 0 10px; text-transform: uppercase; }
+                .result-card { border: 1.5px solid #cbd5e1; margin-bottom: 15px; page-break-inside: avoid; }
+                .top-card { border-color: #f59e0b; border-width: 2.5px; }
+                .card-header { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1.5px solid #cbd5e1; background: #f8fafc; }
+                .name { font-size: 14px; font-weight: 900; color: #1e40af; text-transform: uppercase; }
+                .result-table { width: 100%; border-collapse: collapse; }
+                .result-table th, .result-table td { border: 1px solid #94a3b8; padding: 4px 2px; text-align: center; }
+                .sub-name-cell { background: #f1f5f9; font-weight: 900; }
+                .mark-tot { font-weight: 900; background: #f8fafc; }
+                .final-val { font-size: 13px; font-weight: 900; }
+                .page-break { page-break-before: always; }
+                @media print { body { padding: 0; } @page { size: landscape; margin: 5mm; } }
+            </style></head><body>
+                <header><h1>KPS BARASAT - CLASS ${currentClass}</h1></header>
+                <div class="section-header" style="background: #92400e;">🏆 Merit List</div>${top10Html}
+                <div class="page-break"></div>
+                <div class="section-header">📋 Detailed Tabulation</div>${allHtml}
+                <script>window.onload = function(){ window.print(); };<\/script>
+            </body></html>`;
 
             const printWin = window.open('', '_blank');
-            if(!printWin) { alert('Pop-up blocked! Please allow pop-ups to print.'); return; }
             printWin.document.open();
             printWin.document.write(html);
             printWin.document.close();
@@ -613,11 +715,11 @@
 
         function setStatus(txt, cls) {
             const el = document.getElementById('syncStatus');
-            el.innerText = txt;
-            el.className = `px-4 py-2 rounded-full text-[10px] font-black border ${cls} uppercase tracking-tighter`;
+            if (el) {
+                el.innerText = txt;
+                el.className = `px-4 py-2 rounded-full text-[10px] font-black border ${cls} uppercase tracking-tighter`;
+            }
         }
-
-        window.onload = init;
     </script>
 </body>
 </html>
