@@ -224,7 +224,7 @@
         const TEACHERS = {
             "Sayan": { class: "XI D", pass: "2000" },
             "Subhankar": { class: "XI C", pass: "subhankar123" },
-            "Ayan": { class: "XIII D", pass: "ayan123" }
+            "Ayan": { class: "XII D", pass: "ayan123" }
         };
 
         let currentTeacher = null;
@@ -335,7 +335,7 @@
                     <th rowspan="2" class="p-4 border-r border-slate-200 text-center w-16 font-black bg-slate-50">#</th>
                     <th rowspan="2" class="p-4 border-r border-slate-200 min-w-[200px] font-black sticky-col">STUDENT NAME</th>
                     ${subHeaders}
-                    <th rowspan="2" class="p-4 font-black text-center bg-blue-100 text-blue-900">B5</th>
+                    <th rowspan="2" class="p-4 font-black text-center bg-blue-100 text-blue-900">B5 (Eng + T4)</th>
                     <th rowspan="2" class="p-4 font-black text-center bg-slate-900 text-white">%</th>
                 </tr>
                 <tr class="border-b border-slate-200">${typeHeaders}</tr>
@@ -390,15 +390,36 @@
                 const hasAnyMarks = SUBJECTS.some(sub => { const m = student[sub]; return m && (m.theory !== '' || m.practical !== ''); });
                 if(!student.name && !hasAnyMarks) continue;
 
+                let englishMark = 0;
+                let otherMarks = [];
                 let studentTotals = [];
-                SUBJECTS.forEach(sub => {
+
+                SUBJECTS.forEach((sub) => {
                     const m = student[sub] || { theory: '', practical: '' };
                     const th = m.theory === 'AB' ? 0 : parseFloat(m.theory) || 0;
                     const pr = m.practical === 'AB' ? 0 : parseFloat(m.practical) || 0;
-                    studentTotals.push(th + pr);
+                    const tot = th + pr;
+                    
+                    studentTotals.push(tot);
+
+                    // Logic: Find English subject (case-insensitive)
+                    if (sub.toLowerCase().includes('english') || sub.toLowerCase() === 'eng') {
+                        englishMark = tot;
+                    } else {
+                        otherMarks.push(tot);
+                    }
                 });
 
-                const b5 = [...studentTotals].sort((a,b) => b-a).slice(0, 5).reduce((a,b) => a+b, 0);
+                // Calculation: English + Top 4 from others
+                let b5 = 0;
+                if (SUBJECTS.some(s => s.toLowerCase().includes('english') || s.toLowerCase() === 'eng')) {
+                    const top4Others = otherMarks.sort((a,b) => b-a).slice(0, 4).reduce((a,b) => a+b, 0);
+                    b5 = englishMark + top4Others;
+                } else {
+                    // Fallback if English is not in list
+                    b5 = [...studentTotals].sort((a,b) => b-a).slice(0, 5).reduce((a,b) => a+b, 0);
+                }
+
                 const pct = b5 > 0 ? (b5 / totalPossible * 100).toFixed(1) : '0.0';
                 rankings.push({ roll: i, name: student.name, b5, totals: studentTotals, pct });
             }
@@ -651,7 +672,7 @@
                 });
 
                 if(studentSubjects.length === 0) return '';
-                let subHeaders = studentSubjects.map(sub => `<th colspan="3" class="sub-name-cell">${sub.toUpperCase()}</th>`).join('');
+                let subHeaders = studentSubjects.map(sub => `<th colspan="3" class="sub-name-cell">${sub.toUpperCase()} ${sub.toLowerCase().includes('english') ? '(Compulsory)' : ''}</th>`).join('');
                 let thPrHeaders = studentSubjects.map(() => `<th class="sub-type-cell">TH</th><th class="sub-type-cell">PR</th><th class="sub-type-cell tot-cell-head">TOT</th>`).join('');
                 let marksCells = studentSubjects.map(sub => {
                     const m = student[sub] || {};
@@ -668,7 +689,7 @@
                         <div class="table-wrapper">
                             <table class="result-table">
                                 <thead>
-                                    <tr>${subHeaders}<th class="final-head b5-head">B5</th><th class="final-head pct-head">%</th></tr>
+                                    <tr>${subHeaders}<th class="final-head b5-head">B5 (Eng + T4)</th><th class="final-head pct-head">%</th></tr>
                                     <tr>${thPrHeaders}<th class="empty-cell"></th><th class="empty-cell"></th></tr>
                                 </thead>
                                 <tbody>
