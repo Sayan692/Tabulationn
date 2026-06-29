@@ -29,7 +29,8 @@
         .table-container::-webkit-scrollbar-track { background: #f1f5f9; }
         .table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         
-        #printFrame { position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; border: none; }
+        /* Ensure print frame is invisible */
+        #printFrame { display: none; }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -44,7 +45,7 @@
             <div class="flex gap-3">
                 <div id="syncStatus" class="px-4 py-2 rounded-full bg-slate-100 text-[10px] font-black border border-slate-200 uppercase tracking-tighter">Initializing...</div>
                 <button onclick="generateReportCards()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-black text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2">
-                    <span>🖨️</span> PRINT TABULATION
+                    <span>🖨️</span> PRINT INDIVIDUAL REPORTS
                 </button>
             </div>
         </header>
@@ -113,7 +114,7 @@
                     <th rowspan="2" class="p-4 border-r border-slate-200 min-w-[200px] font-black sticky-col">STUDENT NAME</th>
                     ${subHeaders}
                     <th rowspan="2" class="p-4 font-black text-center bg-blue-100 text-blue-900">B5</th>
-                    <th rowspan="2" class="p-4 font-black text-center bg-slate-900 text-white">%</th>
+                    <th rowspan="2" class="p-4 font-black text-center bg-slate-900 text-white">RANK</th>
                 </tr>
                 <tr class="border-b border-slate-200">${typeHeaders}</tr>
             `;
@@ -138,8 +139,7 @@
             let rankings = [];
             for(let i=1; i<=60; i++) {
                 const student = (examsData[currentExam] && examsData[currentExam][i]) || { name: "" };
-                const hasAnyMarks = SUBJECTS.some(sub => { const m = student[sub]; return m && (m.theory !== '' || m.practical !== ''); });
-                if(!student.name && !hasAnyMarks) continue;
+                if(!student.name) continue;
 
                 let studentTotals = [];
                 SUBJECTS.forEach(sub => {
@@ -150,9 +150,7 @@
                 });
 
                 const b5 = [...studentTotals].sort((a,b) => b-a).slice(0, 5).reduce((a,b) => a+b, 0);
-                // Percentage = B5 / 500 * 100 (max 100 per subject × 5 subjects)
-                const pct = b5 > 0 ? (b5 / 500 * 100).toFixed(1) : '0.0';
-                rankings.push({ roll: i, name: student.name, b5, totals: studentTotals, pct });
+                rankings.push({ roll: i, name: student.name, b5: b5, totals: studentTotals });
             }
             return rankings.sort((a,b) => b.b5 - a.b5);
         }
@@ -160,104 +158,38 @@
         function renderTable() {
             const tbody = document.getElementById('tbody');
             let rankings = getRankings();
-            const top10Rolls = new Set(rankings.slice(0, 10).map(r => r.roll));
 
-            // Compute highest mark per subject across all students
-            let highestTotals = SUBJECTS.map((sub) => {
-                let max = 0;
-                for(let i=1; i<=60; i++) {
-                    const student = examsData[currentExam] && examsData[currentExam][i];
-                    if(!student) continue;
-                    const m = student[sub] || {};
-                    const th = m.theory === 'AB' ? 0 : parseFloat(m.theory) || 0;
-                    const pr = m.practical === 'AB' ? 0 : parseFloat(m.practical) || 0;
-                    if(th + pr > max) max = th + pr;
-                }
-                return max;
-            });
-
-            function buildRow(i) {
+            let rows = '';
+            for(let i=1; i<=60; i++) {
                 const student = (examsData[currentExam] && examsData[currentExam][i]) || { name: "" };
                 const rankData = rankings.find(r => r.roll === i);
-                const isTop10 = top10Rolls.has(i);
+                const rank = rankData ? rankings.indexOf(rankData) + 1 : '-';
                 const b5 = rankData ? rankData.b5 : 0;
-                const pct = rankData ? rankData.pct : '-';
-
-                const rowClass = isTop10
-                    ? 'border-b border-amber-200 bg-amber-50/40 hover:bg-amber-100 group'
-                    : 'border-b border-slate-100 hover:bg-slate-50 group';
-
+                
                 let subCells = '';
                 SUBJECTS.forEach((sub, idx) => {
                     const m = student[sub] || { theory: '', practical: '' };
                     const tot = rankData ? rankData.totals[idx] : 0;
-                    const isHigh = tot > 0 && tot === highestTotals[idx];
                     subCells += `
                         <td class="p-0 border-r border-slate-100"><input onchange="update(${i}, '${sub}', 'theory', this.value)" class="w-full p-2 text-center bg-transparent outline-none focus:bg-blue-50" value="${m.theory || ''}"></td>
                         <td class="p-0 border-r border-slate-100"><input onchange="update(${i}, '${sub}', 'practical', this.value)" class="w-full p-2 text-center bg-transparent outline-none focus:bg-blue-50" value="${m.practical || ''}"></td>
-                        <td class="p-1 border-r border-slate-200 text-center font-bold ${isHigh ? 'bg-green-100 text-green-800' : 'bg-slate-50 text-slate-600'}">${tot || '-'}</td>
+                        <td class="p-1 border-r border-slate-200 text-center font-bold bg-slate-50 text-slate-600">${tot || '-'}</td>
                     `;
                 });
 
-                return `
-                    <tr class="${rowClass}">
+                rows += `
+                    <tr class="border-b border-slate-100 hover:bg-slate-50 group">
                         <td class="p-2 border-r bg-slate-50 text-center font-bold text-slate-400">${i}</td>
-                        <td class="p-0 border-r sticky-col group-hover:bg-amber-50">
+                        <td class="p-0 border-r sticky-col group-hover:bg-slate-50">
                             <input onchange="update(${i}, 'name', '', this.value)" class="w-full p-3 font-bold uppercase bg-transparent outline-none focus:bg-blue-50" value="${student.name || ''}" placeholder="...">
                         </td>
                         ${subCells}
                         <td class="p-2 text-center font-black bg-blue-50 text-blue-800">${b5}</td>
-                        <td class="p-2 text-center font-black bg-slate-900 text-white text-xs">${pct}%</td>
+                        <td class="p-2 text-center font-black bg-slate-900 text-white">${rank}</td>
                     </tr>
                 `;
             }
-
-            // Section header helper
-            function sectionHeader(label, colorClass) {
-                return `<tr class="${colorClass}">
-                    <td colspan="100%" class="p-2 px-4 font-black text-[11px] uppercase tracking-widest">${label}</td>
-                </tr>`;
-            }
-
-            // Top 10 rows (sorted by rank)
-            let top10Rows = '';
-            rankings.slice(0, 10).forEach(r => { top10Rows += buildRow(r.roll); });
-
-            // All students sorted by roll number
-            let restRows = '';
-            for(let i = 1; i <= 60; i++) {
-                const student = examsData[currentExam] && examsData[currentExam][i];
-                const hasData = student && (student.name || SUBJECTS.some(sub => { const m = student[sub]; return m && (m.theory !== '' || m.practical !== ''); }));
-                if(!hasData) continue;
-                restRows += buildRow(i);
-            }
-
-            // Highest marks row
-            let highCells = '';
-            SUBJECTS.forEach((sub, idx) => {
-                const h = highestTotals[idx];
-                highCells += `
-                    <td class="p-1 border-r border-slate-200 text-center text-[9px] text-slate-400">-</td>
-                    <td class="p-1 border-r border-slate-200 text-center text-[9px] text-slate-400">-</td>
-                    <td class="p-1 border-r border-slate-200 text-center font-black text-green-700 bg-green-50">${h || '-'}</td>
-                `;
-            });
-            const highRow = `
-                <tr class="border-t-2 border-green-300 bg-green-50/60">
-                    <td class="p-2 border-r bg-green-100 text-center font-black text-green-800 text-[9px]">★</td>
-                    <td class="p-3 border-r sticky-col bg-green-100 font-black text-green-800 text-[10px] uppercase tracking-wide">Highest Marks</td>
-                    ${highCells}
-                    <td class="p-2 text-center bg-green-100 text-green-800 font-black">-</td>
-                    <td class="p-2 text-center bg-green-100 text-green-800 font-black">-</td>
-                </tr>
-            `;
-
-            tbody.innerHTML =
-                sectionHeader('🏆 Top 10 Students', 'bg-amber-400 text-amber-950') +
-                top10Rows +
-                sectionHeader('📋 All Students', 'bg-slate-700 text-white') +
-                restRows +
-                highRow;
+            tbody.innerHTML = rows;
         }
 
         async function update(roll, sub, field, val) {
@@ -293,137 +225,99 @@
         }
 
         function generateReportCards() {
-            const rankings = getRankings();
+            const printFrame = document.getElementById('printFrame');
+            const doc = printFrame.contentWindow.document;
+            let rankings = getRankings();
+            
+            let html = `
+                <html>
+                <head>
+                    <style>
+                        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; margin: 0; }
+                        .page { padding: 40px; page-break-after: always; min-height: 100vh; position: relative; box-sizing: border-box; }
+                        .header { text-align: center; margin-bottom: 30px; }
+                        .header h1 { margin: 0; font-size: 32px; letter-spacing: 2px; }
+                        .header p { margin: 5px 0; font-weight: bold; text-decoration: underline; }
+                        .student-info { display: flex; justify-content: space-between; margin-bottom: 25px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+                        .student-info span { font-weight: bold; font-size: 18px; }
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                        th, td { border: 1px solid #000; padding: 12px; text-align: center; }
+                        th { background: #f2f2f2; }
+                        .footer { margin-top: 80px; display: flex; justify-content: space-between; }
+                        .sig { border-top: 1px solid #000; width: 200px; text-align: center; font-weight: bold; padding-top: 5px; }
+                        .summary { display: flex; justify-content: space-between; align-items: center; }
+                        .b5-box { border: 3px solid #000; padding: 15px 30px; font-size: 24px; font-weight: 900; }
+                        .rank-box { background: #000; color: #fff; padding: 15px 30px; font-size: 24px; font-weight: 900; }
+                    </style>
+                </head>
+                <body>
+            `;
 
-            // Helper: build a compact flat table for a list of students
-            function buildTable(studentList, rowBg) {
-                if(studentList.length === 0) return '<p style="color:#999;font-size:10px;">No data.</p>';
+            for(let i=1; i<=60; i++) {
+                const student = (examsData[currentExam] && examsData[currentExam][i]);
+                if(!student || !student.name) continue;
 
-                // Collect all subjects used across these students
-                const usedSubjects = SUBJECTS.filter(sub =>
-                    studentList.some(({ student }) => {
-                        const m = student && student[sub];
-                        return m && (m.theory !== '' || m.practical !== '');
-                    })
-                );
-
-                const th = (txt, bg='#e2e8f0', extra='') =>
-                    `<th style="padding:3px 5px;border:1px solid #999;background:${bg};font-size:8px;font-weight:900;text-align:center;white-space:nowrap;${extra}">${txt}</th>`;
-
-                // Header row 1: # | NAME | subject names (colspan 3 each) | B5 | %
-                let hRow1 = th('#', '#cbd5e1') + th('STUDENT NAME', '#cbd5e1', 'min-width:100px;text-align:left;');
-                usedSubjects.forEach(s => {
-                    hRow1 += `<th colspan="3" style="padding:3px 5px;border:1px solid #999;background:#dbeafe;font-size:8px;font-weight:900;text-align:center;">${s.toUpperCase()}</th>`;
-                });
-                hRow1 += th('B5', '#bfdbfe') + th('%', '#1e293b', 'color:#fff;');
-
-                // Header row 2: blank | blank | TH/PR/TOT per subject | blank | blank
-                let hRow2 = `<th style="border:1px solid #999;background:#e2e8f0;"></th><th style="border:1px solid #999;background:#e2e8f0;"></th>`;
-                usedSubjects.forEach(() => {
-                    hRow2 += `<th style="padding:2px;border:1px solid #bbb;background:#eff6ff;font-size:7px;color:#555;text-align:center;">TH</th>`;
-                    hRow2 += `<th style="padding:2px;border:1px solid #bbb;background:#eff6ff;font-size:7px;color:#555;text-align:center;">PR</th>`;
-                    hRow2 += `<th style="padding:2px;border:1px solid #bbb;background:#dbeafe;font-size:7px;font-weight:900;text-align:center;">TOT</th>`;
-                });
-                hRow2 += `<th style="border:1px solid #999;background:#bfdbfe;"></th><th style="border:1px solid #999;background:#1e293b;"></th>`;
-
-                // Data rows
-                let dataRows = '';
-                studentList.forEach(({ roll, student, rData, label }) => {
-                    const b5 = rData ? rData.b5 : '-';
-                    const pct = rData ? rData.pct + '%' : '-';
-                    let cells = '';
-                    usedSubjects.forEach(sub => {
-                        const m = (student && student[sub]) || {};
-                        const subIdx = SUBJECTS.indexOf(sub);
-                        const tot = rData ? (rData.totals[subIdx] || '-') : '-';
-                        const thVal = m.theory !== undefined && m.theory !== '' ? m.theory : '-';
-                        const prVal = m.practical !== undefined && m.practical !== '' ? m.practical : '-';
-                        cells += `<td style="padding:2px 4px;border:1px solid #ddd;text-align:center;font-size:8px;">${thVal}</td>`;
-                        cells += `<td style="padding:2px 4px;border:1px solid #ddd;text-align:center;font-size:8px;">${prVal}</td>`;
-                        cells += `<td style="padding:2px 4px;border:1px solid #ddd;text-align:center;font-size:8px;font-weight:bold;background:#f0f4ff;">${tot}</td>`;
-                    });
-                    dataRows += `<tr style="background:${rowBg};">
-                        <td style="padding:2px 5px;border:1px solid #ddd;text-align:center;font-size:8px;font-weight:bold;color:#555;white-space:nowrap;">${label || roll}</td>
-                        <td style="padding:2px 6px;border:1px solid #ddd;font-size:8px;font-weight:bold;white-space:nowrap;">${(student && student.name) || '—'}</td>
-                        ${cells}
-                        <td style="padding:2px 5px;border:1px solid #ddd;text-align:center;font-size:8px;font-weight:900;background:#dbeafe;color:#1e3a8a;">${b5}</td>
-                        <td style="padding:2px 5px;border:1px solid #ddd;text-align:center;font-size:8px;font-weight:900;background:#1e293b;color:#fff;">${pct}</td>
-                    </tr>`;
-                });
-
-                return `<table style="width:100%;border-collapse:collapse;table-layout:auto;">
-                    <thead>
-                        <tr>${hRow1}</tr>
-                        <tr>${hRow2}</tr>
-                    </thead>
-                    <tbody>${dataRows}</tbody>
-                </table>`;
-            }
-
-            // Build full tabulation list
-            const allStudents = [];
-            for(let i = 1; i <= 60; i++) {
-                const student = examsData[currentExam] && examsData[currentExam][i];
-                if(!student) continue;
-                const hasData = student.name || SUBJECTS.some(sub => { const m = student[sub]; return m && (m.theory !== '' || m.practical !== ''); });
-                if(!hasData) continue;
                 const rData = rankings.find(r => r.roll === i);
-                allStudents.push({ roll: i, student, rData, label: i });
+                const rank = rankings.indexOf(rData) + 1;
+
+                let rowsHtml = "";
+                SUBJECTS.forEach((sub, idx) => {
+                    const m = student[sub];
+                    if(m && (m.theory !== '' || m.practical !== '')) {
+                        const total = rData.totals[idx];
+                        rowsHtml += `
+                            <tr>
+                                <td style="text-align:left; font-weight:bold;">${sub.toUpperCase()}</td>
+                                <td>${m.theory || '0'}</td>
+                                <td>${m.practical || '0'}</td>
+                                <td style="font-weight:bold;">${total}</td>
+                            </tr>
+                        `;
+                    }
+                });
+
+                html += `
+                    <div class="page">
+                        <div class="header">
+                            <h1>KPS BARASAT</h1>
+                            <p>STUDENT PROGRESS REPORT - ${currentExam.toUpperCase()}</p>
+                        </div>
+                        <div class="student-info">
+                            <span>NAME: ${student.name}</span>
+                            <span>ROLL: ${i}</span>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="text-align:left;">SUBJECT</th>
+                                    <th>THEORY</th>
+                                    <th>PRACTICAL</th>
+                                    <th>TOTAL</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rowsHtml}</tbody>
+                        </table>
+                        <div class="summary">
+                            <div class="b5-box">BEST OF FIVE: ${rData.b5}</div>
+                            <div class="rank-box">RANK: ${rank}</div>
+                        </div>
+                        <div class="footer">
+                            <div class="sig">Class Teacher</div>
+                            <div class="sig">Principal</div>
+                        </div>
+                    </div>
+                `;
             }
 
-            if(allStudents.length === 0) {
-                alert('No student data found to print!');
-                return;
-            }
+            html += "</body></html>";
+            doc.open();
+            doc.write(html);
+            doc.close();
 
-            // Top 10 list (rank order)
-            const top10List = rankings.slice(0, 10).map((r, idx) => ({
-                roll: r.roll,
-                student: examsData[currentExam] && examsData[currentExam][r.roll],
-                rData: r,
-                label: `#${idx + 1}`
-            }));
-
-            const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>KPS Barasat - Tabulation</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 12px; font-size: 9px; }
-  h1 { text-align: center; margin: 0 0 2px; font-size: 18px; letter-spacing: 2px; }
-  .subtitle { text-align: center; font-weight: bold; text-decoration: underline; margin: 0 0 8px; font-size: 10px; }
-  .section-title { font-size: 10px; font-weight: 900; padding: 4px 10px; margin: 10px 0 5px; letter-spacing: 1px; }
-  .page-break { page-break-before: always; break-before: page; }
-  @media print {
-    body { padding: 6px; }
-    @page { size: landscape; margin: 6mm; }
-    .no-break { page-break-inside: avoid; break-inside: avoid; }
-  }
-</style>
-</head>
-<body>
-  <h1>KPS BARASAT</h1>
-  <div class="subtitle">TABULATION SHEET — ${currentExam.toUpperCase()}</div>
-  <div class="section-title" style="background:#1e293b;color:#fff;">📋 Full Tabulation</div>
-  ${buildTable(allStudents, '#ffffff')}
-
-  <div class="page-break"></div>
-  <h1>KPS BARASAT</h1>
-  <div class="subtitle">TOP 10 STUDENTS — ${currentExam.toUpperCase()}</div>
-  <div class="section-title" style="background:#92400e;color:#fef9c3;">🏆 Top 10 Students</div>
-  ${buildTable(top10List, '#fffbeb')}
-
-  <script>window.onload = function(){ window.focus(); window.print(); };<\/script>
-</body>
-</html>`;
-
-            const printWin = window.open('', '_blank', 'width=1200,height=800');
-            if(!printWin) { alert('Pop-up blocked! Please allow pop-ups and try again.'); return; }
-            printWin.document.open();
-            printWin.document.write(html);
-            printWin.document.close();
+            setTimeout(() => {
+                printFrame.contentWindow.focus();
+                printFrame.contentWindow.print();
+            }, 500);
         }
 
         function setStatus(txt, cls) {
